@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (uploadRedirectButton) {
         uploadRedirectButton.addEventListener('click', () => {
-            window.location.href = 'upload.html';
+            window.location.href = '/upload';
         });
     }
 

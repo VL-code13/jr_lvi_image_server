@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const showcaseButton = document.querySelector('.header__button-btn');
     if (showcaseButton) {
         showcaseButton.addEventListener('click', function () {
-            window.location.href = './upload';
+            window.location.href = '/upload';
         });
     }
 });
