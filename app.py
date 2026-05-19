@@ -37,9 +37,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Остальной код приложения (функции, маршруты и т. д.) остаётся без изменений
-
-
 def detect_image_extension(file_data: bytes) -> str | None:
     """Определяет расширение изображения по его содержимому."""
     try:
@@ -96,6 +93,11 @@ def upload_image():
 
     original_filename = uploaded_file.filename or 'Unknown'
 
+    # Проверяем, что файл имеет имя
+    if not original_filename or original_filename == 'Unknown':
+        logger.warning('File has no name')
+        return jsonify({'error': 'Файл не имеет имени'}), 400
+
     try:
         file_data = uploaded_file.read()  # Читаем данные файла
     except Exception as e:
@@ -121,13 +123,22 @@ def upload_image():
     unique_filename = f'{uuid.uuid4().hex}.{image_extension}'
     target_path = IMAGES_DIR / unique_filename
 
+    # Создаём директорию, если её нет
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
     # Сохраняем файл с обработкой ошибок
     try:
         target_path.write_bytes(file_data)
         logger.info(f'Image uploaded successfully: {original_filename} → {unique_filename}')
-    except (IOError, PermissionError) as e:
-        logger.error(f'Failed to save file {unique_filename}: {e}')
-        return jsonify({'error': 'Failed to save file'}), 500
+    except PermissionError as e:
+        logger.error(f'Permission denied when saving file {unique_filename}: {e}')
+        return jsonify({'error': 'Нет прав на запись файла'}), 500
+    except OSError as e:
+        logger.error(f'OS error when saving file {unique_filename}: {e}')
+        return jsonify({'error': 'Ошибка файловой системы'}), 500
+    except Exception as e:
+        logger.error(f'Unexpected error when saving file {unique_filename}: {e}')
+        return jsonify({'error': 'Неизвестная ошибка при сохранении файла'}), 500
 
     # Формируем URL для доступа к изображению
     relative_url = url_for('get_image', filename=unique_filename)

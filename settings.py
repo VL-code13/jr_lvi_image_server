@@ -2,12 +2,16 @@ from pathlib import Path
 import os
 
 # Базовый каталог проекта
-BASE_DIR = Path(__file__).resolve().parent.parent  # parent.parent — чтобы подняться на уровень выше до корня проекта
+BASE_DIR = Path(__file__).resolve().parent
+
+# Получаем пути из переменных окружения или используем значения по умолчанию
+IMAGES_DIR_STR = os.getenv('IMAGES_DIR', BASE_DIR/'images')
+LOGS_DIR_STR = os.getenv('LOGS_DIR', BASE_DIR/'logs')
 
 
-# Директории (с возможностью переопределения через переменные окружения)
-IMAGES_DIR = Path(os.getenv('IMAGES_DIR', BASE_DIR / 'images'))
-LOGS_DIR = Path(os.getenv('LOGS_DIR', BASE_DIR / 'logs'))
+# Преобразуем строки в Path-объекты
+IMAGES_DIR = Path(IMAGES_DIR_STR)
+LOGS_DIR = Path(LOGS_DIR_STR)
 
 # Ограничения по размеру файлов
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 МБ
@@ -20,8 +24,21 @@ ALLOWED_IMAGE_FORMATS = {
     'GIF': 'gif'
 }
 
-
 def ensure_directories_exist():
-    """Создаёт необходимые директории, если их нет."""
-    IMAGES_DIR.mkdir(exist_ok=True, parents=True)
-    LOGS_DIR.mkdir(exist_ok=True, parents=True)
+    """Создаёт необходимые директории, если их нет, с обработкой ошибок."""
+    for directory in [IMAGES_DIR, LOGS_DIR]:
+        try:
+            # Создаём директорию с родительскими папками, если нужно
+            directory.mkdir(exist_ok=True, parents=True)
+            # Проверяем, что директория действительно существует
+            if not directory.exists():
+                raise RuntimeError(f"Failed to create directory: {directory}")
+            # Устанавливаем права доступа (755: rwxr-xr-x)
+            os.chmod(directory, 0o755)
+            print(f"Directory created/verified: {directory}")
+        except PermissionError as e:
+            print(f"Permission denied when creating {directory}: {e}")
+            raise
+        except Exception as e:
+            print(f"Error creating directory {directory}: {e}")
+            raise
