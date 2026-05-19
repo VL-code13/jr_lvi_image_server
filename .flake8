@@ -1,0 +1,33 @@
+[flake8]
+max-line-length = 88
+max-complexity = 10
+
+ignore =
+    E501,
+    W503,
+    W504,
+    F401,
+    F403,
+    D100,
+    D101,
+    D102,
+    D104,
+    D105,
+    B008,
+    S101
+
+exclude =
+    .git,
+    __pycache__,
+    docs,
+    tests,
+    venv,
+    .venv,
+    migrations,
+    *.egg-info,
+    build,
+    dist,
+    node_modules
+
+show-source = true
+statistics = true

@@ -20,6 +20,7 @@ ALLOWED_IMAGE_FORMATS = {
     'GIF': 'gif'
 }
 
+
 def ensure_directories_exist():
     """Создаёт необходимые директории, если их нет."""
     IMAGES_DIR.mkdir(exist_ok=True, parents=True)
