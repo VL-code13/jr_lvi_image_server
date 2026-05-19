@@ -1,143 +1,178 @@
 from flask import Flask, render_template, jsonify, request, send_from_directory, url_for
 from PIL import Image, UnidentifiedImageError
-from werkzeug.exceptions import RequestEntityTooLarge
-import os
+from werkzeug.exceptions import RequestEntityTooLarge, BadRequest
 import logging
 import uuid
 from io import BytesIO
-from pathlib import Path
+from flask_cors import CORS
+
+# Импортируем настройки из отдельного файла
+from settings import (
+    BASE_DIR,
+    IMAGES_DIR,
+    LOGS_DIR,
+    MAX_FILE_SIZE,
+    REQUEST_LIMIT,
+    ALLOWED_IMAGE_FORMATS,
+    ensure_directories_exist
+)
 
 app = Flask(__name__)
+CORS(app)
 
-BASE_DIR = Path(__file__).resolve().parent
-
-IMAGES_DIR = Path(os.getenv('IMAGES_DIR', BASE_DIR / 'images'))
-
-LOGS_DIR = Path(os.getenv('LOGS_DIR', BASE_DIR / 'logs'))
-
-MAX_FILE_SIZE = 5 * 1024 * 1024
-
-REQUEST_LIMIT = MAX_FILE_SIZE + 1024 * 1024
-
-ALLOWED_IMAGE_FORMATS = {
-    'JPEG': 'jpg',
-    'PNG': 'png',
-    'GIF': 'gif'
-}
-
+# Применяем настройки
 app.config['MAX_CONTENT_LENGTH'] = REQUEST_LIMIT
 
-IMAGES_DIR.mkdir(exist_ok=True)
+# Создаём директории при запуске приложения
+ensure_directories_exist()
 
-LOGS_DIR.mkdir(exist_ok=True)
-
+# Настройка логирования
 logging.basicConfig(
     filename=LOGS_DIR / 'app.log',
     level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s %(message)s',
+    format='[%(asctime)s] %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     encoding='utf-8'
 )
+logger = logging.getLogger(__name__)
 
 
-def detect_image_extension(file_data: bytes):
+# Остальной код приложения (функции, маршруты и т. д.) остаётся без изменений
+
+
+def detect_image_extension(file_data: bytes) -> str | None:
+    """Определяет расширение изображения по его содержимому."""
     try:
         with Image.open(BytesIO(file_data)) as image:
             image.verify()
-
             return ALLOWED_IMAGE_FORMATS.get(image.format)
-    except (UnidentifiedImageError, OSError):
+    except (UnidentifiedImageError, OSError, ValueError):
         return None
 
 
 @app.get('/')
 def home():
+    """Главная страница сервиса."""
     return render_template('index.html')
 
 
 @app.get('/upload')
 def upload_page():
+    """Страница загрузки изображений."""
     return render_template('upload.html')
 
 
 @app.get('/images/')
 def images_page():
+    """Страница с каталогом загруженных изображений."""
     images = []
-
-    for image_path in sorted(IMAGES_DIR.iterdir(), key=lambda path:path.stat().st_mtime, reverse=True):
-        if not image_path.is_file():
-            continue
-
-        relative_url:str = url_for('get_image', filename=image_path.name)
-        full_url = request.host_url.rstrip('/') + relative_url
-
-        images.append(
-            {
+    try:
+        for image_path in sorted(IMAGES_DIR.iterdir(), key=lambda path: path.stat().st_mtime, reverse=True):
+            if not image_path.is_file():
+                continue
+            relative_url: str = url_for('get_image', filename=image_path.name)
+            full_url = request.host_url.rstrip('/') + relative_url
+            images.append({
                 'name': image_path.name,
                 'url': relative_url,
-                'full_url': full_url
-            }
-        )
+                'full_url': full_url,
+                'size': image_path.stat().st_size
+            })
+    except Exception as e:
+        logger.error(f'Error reading images directory: {e}')
+        return jsonify({'error': 'Failed to read images directory'}), 500
     return render_template('images.html', images=images)
 
 
 @app.post('/upload')
 def upload_image():
+    """Обработчик загрузки изображений."""
     uploaded_file = request.files.get('image')
-
     if uploaded_file is None:
-        logging.warning('No image uploaded. Файл image не найден в запросе.')
+        logger.warning('No image uploaded. Файл image не найден в запросе.')
         return jsonify({
             'error': 'No image uploaded. Файл не найден. Поле формы должно называться image'
-        })
+        }), 400
 
     original_filename = uploaded_file.filename or 'Unknown'
 
-    file_data = uploaded_file.read()    # стал bytes
+    try:
+        file_data = uploaded_file.read()  # Читаем данные файла
+    except Exception as e:
+        logger.error(f'Error reading file {original_filename}: {e}')
+        return jsonify({'error': 'Error reading file'}), 500
 
     if not file_data:
-        logging.warning(f'Ошибка: файл пустой {original_filename}')
-        return jsonify({
-            'error': 'Файл пустой'
-        }), 400
+        logger.warning(f'Empty file uploaded: {original_filename}')
+        return jsonify({'error': 'Файл пустой'}), 400
 
     if len(file_data) > MAX_FILE_SIZE:
-        logging.warning(f'Ошибка: Файл {original_filename} не должен быть больше 5 Мб.')
-        return jsonify({
-            'error': 'Файл не должен быть больше 5 Мб.'
-        })
+        logger.warning(f'File {original_filename} exceeds size limit (5 MB)')
+        return jsonify({'error': 'Файл не должен быть больше 5 МБ.'}), 413
 
     image_extension = detect_image_extension(file_data)
-
     if image_extension is None:
-        logging.warning(f'Ошибка: Файл {original_filename} имеет не верный формат.')
+        logger.warning(f'Unsupported image format: {original_filename}')
         return jsonify({
-            'error': 'Файл не верного формата. Поддерживаются только jpg, png, gif.'
-        })
+            'error': 'Файл неверного формата. Поддерживаются только jpg, png, gif.'
+        }), 400
 
-    unique_filename = f'{uuid.uuid4().hex}.{image_extension}'   # генерируем уникальное имя
-
+    # Генерируем уникальное имя файла
+    unique_filename = f'{uuid.uuid4().hex}.{image_extension}'
     target_path = IMAGES_DIR / unique_filename
 
-    target_path.write_bytes(file_data)
+    # Сохраняем файл с обработкой ошибок
+    try:
+        target_path.write_bytes(file_data)
+        logger.info(f'Image uploaded successfully: {original_filename} → {unique_filename}')
+    except (IOError, PermissionError) as e:
+        logger.error(f'Failed to save file {unique_filename}: {e}')
+        return jsonify({'error': 'Failed to save file'}), 500
 
+    # Формируем URL для доступа к изображению
     relative_url = url_for('get_image', filename=unique_filename)
     full_url = request.host_url.rstrip('/') + relative_url
 
-    logging.info(f'Успех. Изображение загружено как {original_filename}')
-    return jsonify(
-        {
-            'message': "Изображение успешно загружено",
-            'id': unique_filename,
-            'url': relative_url,
-            'full_url': full_url
-        }
-    ), 201
+    return jsonify({
+        'message': 'Изображение успешно загружено',
+        'id': unique_filename,
+        'original_name': original_filename,
+        'url': relative_url,
+        'full_url': full_url,
+        'size': len(file_data)
+    }), 201
 
 
 @app.get('/images/<path:filename>')
 def get_image(filename: str):
-    return send_from_directory(IMAGES_DIR, filename)
+    """Отдаёт запрошенное изображение."""
+    file_path = IMAGES_DIR / filename
+    if not file_path.exists():
+        logger.warning(f'Requested file not found: {filename}')
+        return jsonify({'error': 'File not found'}), 404
+    if not file_path.is_file():
+        logger.warning(f'Invalid file path requested: {filename}')
+        return jsonify({'error': 'Invalid file path'}), 400
+    try:
+        return send_from_directory(IMAGES_DIR, filename)
+    except Exception as e:
+        logger.error(f'Error serving file {filename}: {e}')
+        return jsonify({'error': 'Error serving file'}), 500
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_file_too_large(e):
+    """Обрабатывает ошибку превышения размера файла."""
+    logger.error('File too large: %s', e)
+    return jsonify({'error': 'Файл слишком большой'}), 413
+
+
+@app.errorhandler(BadRequest)
+def handle_bad_request(e):
+    """Обрабатывает некорректные запросы."""
+    logger.error('Bad request: %s', e)
+    return jsonify({'error': 'Некорректный запрос'}), 400
+
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000, debug=True)
+    app.run(host='0.0.0.0', port=3000, debug=True)  # Отключаем debug в продакшене
