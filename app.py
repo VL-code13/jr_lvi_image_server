@@ -160,7 +160,7 @@ def upload_image():
 
 """@app.get('/images/<path:filename>')
 def get_image(filename: str):
-    """Отдаёт запрошенное изображение."""
+    # Отдаёт запрошенное изображение. 
     file_path = IMAGES_DIR / filename
     if not file_path.exists():
         logger.warning(f'Requested file not found: {filename}')
