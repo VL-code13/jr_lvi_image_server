@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, send_from_directory, url_for
+from flask import Flask, render_template, jsonify, request, url_for
 from PIL import Image, UnidentifiedImageError
 from werkzeug.exceptions import RequestEntityTooLarge, BadRequest
 import logging
@@ -61,12 +61,16 @@ def upload_page():
 
 @app.get('/images/')
 def images_page():
-    """Страница с каталогом загруженных изображений."""
+    """Страница с каталогом загруженных изображений.
+      Примечание: сами файлы отдаются через Nginx,
+    но список файлов формирует Flask для отображения в шаблоне.
+    """
     images = []
     try:
         for image_path in sorted(IMAGES_DIR.iterdir(), key=lambda path: path.stat().st_mtime, reverse=True):
             if not image_path.is_file():
                 continue
+            # Формируем URL, который будет обрабатываться Nginx
             relative_url: str = url_for('get_image', filename=image_path.name)
             full_url = request.host_url.rstrip('/') + relative_url
             images.append({
@@ -140,8 +144,8 @@ def upload_image():
         logger.error(f'Unexpected error when saving file {unique_filename}: {e}')
         return jsonify({'error': 'Неизвестная ошибка при сохранении файла'}), 500
 
-    # Формируем URL для доступа к изображению
-    relative_url = url_for('get_image', filename=unique_filename)
+    # Формируем URL для доступа к изображению (через Nginx)
+    relative_url = f'/images/{unique_filename}' #url_for('get_image', filename=unique_filename)
     full_url = request.host_url.rstrip('/') + relative_url
 
     return jsonify({
@@ -154,7 +158,7 @@ def upload_image():
     }), 201
 
 
-@app.get('/images/<path:filename>')
+"""@app.get('/images/<path:filename>')
 def get_image(filename: str):
     """Отдаёт запрошенное изображение."""
     file_path = IMAGES_DIR / filename
@@ -169,7 +173,7 @@ def get_image(filename: str):
     except Exception as e:
         logger.error(f'Error serving file {filename}: {e}')
         return jsonify({'error': 'Error serving file'}), 500
-
+"""
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(e):
