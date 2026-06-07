@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, url_for
+from flask import Flask, render_template, jsonify, request, url_for, send_from_directory
 from PIL import Image, UnidentifiedImageError
 from werkzeug.exceptions import RequestEntityTooLarge, BadRequest
 import logging
@@ -145,7 +145,7 @@ def upload_image():
         return jsonify({'error': 'Неизвестная ошибка при сохранении файла'}), 500
 
     # Формируем URL для доступа к изображению (через Nginx)
-    relative_url = f'/images/{unique_filename}' #url_for('get_image', filename=unique_filename)
+    relative_url =  url_for('get_image', filename=unique_filename) #f'/images/{unique_filename}'
     full_url = request.host_url.rstrip('/') + relative_url
 
     return jsonify({
@@ -158,9 +158,9 @@ def upload_image():
     }), 201
 
 
-"""@app.get('/images/<path:filename>')
+@app.get('/images/<path:filename>')
 def get_image(filename: str):
-    # Отдаёт запрошенное изображение. 
+    """Отдаёт запрошенное изображение."""
     file_path = IMAGES_DIR / filename
     if not file_path.exists():
         logger.warning(f'Requested file not found: {filename}')
@@ -173,7 +173,7 @@ def get_image(filename: str):
     except Exception as e:
         logger.error(f'Error serving file {filename}: {e}')
         return jsonify({'error': 'Error serving file'}), 500
-"""
+
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(e):
